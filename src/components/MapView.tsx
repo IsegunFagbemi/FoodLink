@@ -44,6 +44,7 @@ export default function MapView({ listings, origin, className = "h-64", locked =
   useEffect(() => {
     let cancelled = false;
     let map: LeafletMap | null = null;
+    let resizeObserver: ResizeObserver | null = null;
 
     (async () => {
       const L = (await import("leaflet")).default;
@@ -59,6 +60,17 @@ export default function MapView({ listings, origin, className = "h-64", locked =
         attributionControl: true,
       }).setView([DEFAULT_CENTER.lat, DEFAULT_CENTER.lng], 11);
       mapRef.current = map;
+
+      // Leaflet measures its container only when the map is created. Results can
+      // switch between compact/mobile and wide desktop layouts after that, so
+      // keep Leaflet in sync with the real container size.
+      resizeObserver =
+        typeof ResizeObserver !== "undefined"
+          ? new ResizeObserver(() => {
+              map?.invalidateSize({ pan: false });
+            })
+          : null;
+      resizeObserver?.observe(container.current);
 
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 18,
@@ -125,10 +137,15 @@ export default function MapView({ listings, origin, className = "h-64", locked =
       } else if (origin) {
         map.setView([origin.lat, origin.lng], 12);
       }
+
+      // A second pass after layout/paint fixes the common "blank map until
+      // resize" problem in responsive panels.
+      requestAnimationFrame(() => map?.invalidateSize({ pan: false }));
     })();
 
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
       map?.remove();
       mapRef.current = null;
     };
